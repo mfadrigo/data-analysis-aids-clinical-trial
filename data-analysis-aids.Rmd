@@ -1,0 +1,692 @@
+---
+title: "Data Analysis of Aids Clinical Trial Group Study"
+author: "Micah Fadrigo, Christie Yang, Baolong Truong"
+date: "6/4/2021"
+output:
+  pdf_document: default
+  html_document: default
+---
+
+```{r message = FALSE, warning=FALSE}
+library(tidyverse)
+library(nlme)
+library(mgcv)
+library(geepack)
+library(lme4)
+```
+
+# Introduction  
+
+The data is from a randomized, double-blind, study of AIDS patients with advanced immune suppression and CD4 counts of less than or equal to 50 cells/$mm^3$. The 1309 patients in this trial were randomized to one of four daily regimens of a medication called Zidovudine. The goal of this project is to compare the effect of treatment types on the changes in log CD4 cell count counts over time.
+
+```{r}
+treatment_code <- data.frame(Code = c(1, 2, 3, 4),
+                             Treatment = c("zidovudine alternating monthly with 400mg didanosine",
+                                           "zidovudine plus 2.25mg of zalcitabine",
+                                           "zidovudine plus 400mg of didanosine",
+                                           "zidovudine plus 400mg of didanosine plus 400mg of nevirapine"))
+
+treatment_code
+```
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+knitr::opts_chunk$set(message = FALSE)
+knitr::opts_chunk$set(warning = FALSE)
+knitr::opts_chunk$set(fig.width= 6, fig.height=4) 
+```
+
+# EDA ON DATASET
+
+```{r include=FALSE, echo = FALSE}
+options(scipen=10)
+
+aids <- read_csv("aids.csv")
+
+aids <- aids %>% 
+  mutate(treatment = as.factor(treatment))
+```
+
+## Number of Subjects, Covariates, and Summary
+
+```{r}
+aids_temp <- aids %>% 
+  select(-id)
+```
+
+```{r, echo = FALSE}
+summary(aids_temp) 
+```
+In this study, there are __1313 subjects__ and __4 covariates__. Note that the summary for id is not meaningful. 
+
+## Univariate summaries
+
+### Age
+
+```{r echo = FALSE}
+aids_age <- aids[c("id","age")] %>% unique()
+summary(aids_age$age)
+
+
+aids_age %>% 
+  ggplot(aes(x=age)) +
+  geom_histogram(binwidth = 5, 
+                 color = 'white',
+                 fill = 'darkolivegreen') + 
+  labs(x = "Age (in years)",
+       y = "Count",
+       title = "Histogram of Age") +
+  theme(plot.title = element_text(size=12))
+```
+
+### Treatment
+
+```{r echo = FALSE}
+aids_treatment <- aids[c("id", "treatment")] %>% unique()
+
+aids_treatment %>% 
+  ggplot(aes(x=treatment)) +
+  geom_bar(fill = 'darkolivegreen',
+           color = "dimgrey") +
+  geom_text(stat = 'count', aes(label=..count..), vjust = -.5) + 
+  labs(x = "Treatment",
+       y = "Count",
+       title = "Bar Plot of Treatment") +
+  theme(plot.title = element_text(size=12))
+```
+
+### Gender
+
+```{r echo = FALSE}
+aids_gender <- aids[c("id", "gender")] %>% unique()
+
+aids_gender %>% 
+  ggplot(aes(x=gender)) +
+  geom_bar(fill = 'darkolivegreen',
+           color = "dimgrey") +
+  geom_text(stat = 'count', aes(label=..count..), vjust = -.5) + 
+  labs(x = "Gender",
+       y = "Count",
+       title = "Bar Plot of Gender") +
+  theme(plot.title = element_text(size=12))
+```
+
+### Week
+
+```{r echo = FALSE}
+aids %>% 
+  ggplot(aes(x = week)) +
+  geom_histogram(binwidth = 2, 
+                 color = "white",
+                 fill = 'darkolivegreen') + 
+  labs(x = "Week",
+       y = "Count",
+       title = "Histogram of Week") +
+  theme(plot.title = element_text(size=12))
+```
+
+
+## Bivariate summaries  
+
+```{r echo = FALSE}
+aids %>% 
+  ggplot(aes(x = age ,
+             y = log_cd4)) + 
+  geom_point() + 
+  geom_smooth(formula = 'y ~ x', 
+              method = "loess", 
+              se = FALSE,
+              color = 'blue') +
+  labs(x = "Age (in years)",
+       y = "Log CD4 Cell Count",
+       title = "Age vs. Log CD4 Cell Count") +
+  theme(plot.title = element_text(size=12))
+```
+
+
+```{r echo = FALSE}
+# gender = categorical variable (Female / Male)
+# log_CD4 = numerical variable
+aids %>% 
+  ggplot(aes(x = treatment,
+              y = log_cd4)) +
+  geom_boxplot() +
+  labs(x = "Treatment",
+       y = "Log CD4 Cell Count",
+       title = "Box Plots of Log CD4 Cell Count Per Treatment") +
+  theme(plot.title = element_text(size=12))
+```
+
+
+
+### Trend of Log CD4 Cell Count Over Time Across Treatments
+
+```{r echo = FALSE}
+# Treatment 1
+aids %>% 
+  filter(treatment == 1) %>% # filter rows 
+  ggplot(aes(x = week, y = log_cd4)) + 
+  geom_point() +
+  geom_point(shape = 1) + 
+  geom_smooth(formula = 'y ~ x',
+              method = "loess", 
+              se = FALSE,
+              color = 'blue') +
+  labs(x = "Week",
+       y = "Log CD4 Cell Count",
+       title = "Scatterplot of Log CD4 Cell Count for Treatment 1") +
+  theme(plot.title = element_text(size=12))
+```
+
+
+```{r}
+# Treatment 2
+aids %>% 
+  filter(treatment == 2) %>% 
+  ggplot(aes(x = week, y = log_cd4)) + 
+  geom_point() +
+  geom_point(shape = 1) + 
+  geom_smooth(formula = 'y ~ x', 
+              method = "loess", 
+              se = FALSE,
+              color = 'blue') +
+  labs(x = "Week",
+       y = "Log CD4 Cell Count",
+       title = "Scatterplot of Log CD4 Cell Count for Treatment 2") +
+  theme(plot.title = element_text(size=12))
+
+
+```
+
+```{r}
+# Treatment 3
+aids %>% 
+  filter(treatment == 3) %>% 
+  ggplot(aes(x = week, y = log_cd4)) + 
+  geom_point() +
+  geom_point(shape = 1) + 
+  geom_smooth(formula = 'y ~ x',
+              method = "loess", 
+              se = FALSE,
+              color = 'blue') +
+  labs(x = "Week",
+       y = "Log CD4 Cell Count",
+       title = "Scatterplot of Log CD4 Cell Count for Treatment 3") +
+  theme(plot.title = element_text(size=12))
+
+```
+
+```{r}
+# Treatment 4
+aids %>% 
+  filter(treatment == 4) %>% 
+  ggplot(aes(x = week, y = log_cd4)) + 
+  geom_point() +
+  geom_point(shape = 1) + 
+  geom_smooth(formula = 'y ~ x',
+              method = "loess", 
+              se = FALSE,
+              color = 'blue') +
+  labs(x = "Week",
+       y = "Log CD4 Cell Count",
+       title = "Scatterplot of Log CD4 Cell Count for Treatment 4") +
+  theme(plot.title = element_text(size=12))
+```
+
+```{r}
+# All treatments
+aids %>% 
+  ggplot(aes(x = week, y = log_cd4, group = treatment, color = treatment)) + 
+  geom_point(colour = "black") + 
+  geom_smooth(formula = 'y ~ x', method = "loess", se = FALSE) +
+ coord_cartesian(ylim = c(2.3,3.4)) +
+  labs(x = "Week",
+       y = "Log CD4 Cell Count",
+       title = "Scatterplot of Log CD4 Cell Count Across Treatments") +
+  theme(plot.title = element_text(size=12))
+
+```
+
+Zooming into the plot, a cubic pattern is identified across all treatments, especially for treatment 3. A cubic term for `Week` variable is necessary in the linear model.
+
+### Log CD4 Cell Count Grouped by Gender
+
+```{r echo = FALSE}
+# gender = categorical variable (Female / Male)
+# log_CD4 = numerical variable
+aids %>% 
+  ggplot(aes(x = gender,
+              y = log_cd4)) +
+  geom_boxplot() +
+  labs(x = "Gender",
+       y = "Log CD4 Cell Count",
+       title = "Box Plots of Log CD4 Cell Count Per Gender") +
+  theme(plot.title = element_text(size=12))
+```
+
+### Week vs. Log CD4 Over Time
+
+```{r echo = FALSE}
+aids %>% 
+  ggplot(aes(x = week , y = log_cd4)) + 
+  geom_point() + 
+  geom_smooth(formula = 'y ~ x', method = "loess", se = FALSE) +
+  labs(x = "Week",
+       y = "Log CD4",
+       title = "Week vs. Log CD4") +
+  theme(plot.title = element_text(size=12))
+```
+
+## Overall trends 
+
+In the scatterplot comparing age and log CD4 cell count, we can see that as age increases over time, log CD4 cell count slightly increases. In the boxplots of log CD4 cell count for each treatment group, we can see that the treatments have similar group means at approximately a log CD4 cell count value of 3. They also have similar sized interquartile ranges and similar sized upper and lower whiskers. Treatment groups 1, 2, and 3 seem to have the most outliers in which treatment group 2 only has one outlier. 
+
+In the scatterplot of log CD4 cell count across treatments, groups are similar in the response at baseline and have similar trends over time. However, the treatment 4 group has a slightly higher average of log CD4 cell count over time and the treatment 1 group has a slightly lower average of log CD4 cell count over time (relative to other treatment groups). The smoothed curves suggest that there is a curvilinear relationship between `Week` and the log CD4 cell count, implying that adding a cubic term should be considered.
+
+In the boxplots of log CD4 cell count for each gender, the boxplots between females and males are very similar- in mean, interquartile range, whiskers, and outliers. 
+
+In the scatterplot comparing week and log CD4 cell count, we can see that as weeks progress over time, log CD4 cell count slightly decreases. At baseline, the average log CD4 cell count value was approximately 3 and at the end of the study, the average log CD4 cell count value decreased to approximately 2.75.
+
+
+## Imbalances in the dataset
+
+This is an unbalanced study. Not all subjects in the study had the same number of observations obtained at a common set of occasions. In other words, times of measurement were not common to all subjects, mostly because of mistimed measurements. The subjects were also unbalanced when comparing the different genders. There was a much larger number of males than females in the study. 
+
+
+## Outliers in the dataset
+
+Based on the boxplot below, there seems to be a few outliers. There are a few which take on log CD4 cell count values above approximately 5.5 and one outlier which takes on a log CD4 cell count value close to 0.
+
+```{r}
+boxplot(aids$log_cd4, ylab = "Log CD4 Cell Count", main = "Log CD4 Cell Count Data")
+```
+
+
+\newpage
+
+# Generalized Least Squares (GLS) & Linear Mixed Effects (LME) Models 
+
+```{r message = FALSE, echo = FALSE}
+
+options(scipen=10)
+
+aids <- read_csv("aids.csv")
+
+aids <- aids %>% 
+  mutate(treatment = as.factor(treatment))
+```
+
+Since this is a randomized experiment, we assume that each treatment group has similar baseline values of log CD4 cell count. In other words, they have similar intercepts, which is why the main treatment effect is not included in any of the following models.
+
+### LME Model with No Interaction Term
+- model_no_inter: $log CD4_i = \beta_1 + \beta_2 age_i + \beta_3 gender_i + \beta_4 week_i + \beta_5 weekcube_i + b_{1i} + b_{4i} week + b_{5i} weekcube_i$  
+  - if gender = male then gender = 1, else gender = 0 (female)
+  
+```{r echo = FALSE}
+aids <- aids %>% 
+  mutate(week_cube = (week)^3) %>% 
+  relocate(week_cube, .after = week)
+
+# Fit the linear mixed effects model with an orthogonal cubic polynomial term for week
+model_no_inter <- lme(log_cd4 ~ age + gender + week + week_cube,
+                   data = aids,
+                   random = ~ week + week_cube | id,
+                   method = "ML")
+
+# Summary of the model
+#summary(model_no_inter)
+```
+
+### LME Model with Interaction Term (week:treatment)
+- model_inter: $log CD4_i = \beta_1 + \beta_2 age_i + \beta_3 gender_i + \beta_4 week_i + \beta_5 weekcube_i + \beta_6 week_i*treatment2_i + \beta_7 week_i*treatment3_i + \beta_8 week_i*treatment4_i  + \beta_9 weekcube_i*treatment2_i + \beta_{10} weekcube_i*treatment3_i + \beta_{11} weekcube_i*treatment4_i + b_{1i} + b_{4i} week_i + b_{5i} weekcube_i$  
+  - if gender = male then gender = 1, else gender = 0 (female)  
+  - treatment_1 is the reference group
+```{r echo = FALSE}
+# All covariates + week:treatment interaction term
+
+
+model_inter <- lme(log_cd4 ~ age + gender + week + week_cube + week:treatment + week_cube:treatment,
+                       data = aids,
+                       random = ~ week + week_cube | id, 
+                       method = "ML",
+                       control = lmeControl(opt = "optim"))
+
+#summary(model_inter)
+```
+
+## Testing Significance of Interaction Term (week:treatment)
+```{r echo = FALSE}
+anova(model_no_inter, model_inter)
+```
+
+- __H_0: Reduced model with all covariates and no week:treatment interaction term.__  
+- __H_1: Full model with week:treatment interaction term.__  
+- We compared a reduced model with all covariates and no week:treatment interaction term to a full model with a week:treatment interaction term. Our p-value was <0.0001, and at the 5% significance level, we concluded that the interaction term was significant. The effect of `Week` on log CD4 cell count differs across treatment groups. Since the week:treatment interaction term is significant, we decided to include it in the model.  
+
+- In the following anova tests, we will be testing the significance of the age and gender covariates.
+
+### LME Model without Age Covariate (including week:treatment interaction)
+- model_no_age: $log CD4_i = \beta_1 + \beta_2 gender_i + \beta_3 week_i + \beta_4 weekcube_i + \beta_5 week_i*treatment2_i + \beta_6 week_i*treatment3_i + \beta_7 week_i*treatment4_i  + \beta_8 weekcube_i*treatment2_i + \beta_9 weekcube_i*treatment3_i + \beta_{10} weekcube_i*treatment4_i + b_{1i} + b_{3i} week_i + b_{4i} weekcube_i$  
+```{r echo = FALSE}
+# without age
+model_no_age <- lme(log_cd4 ~ gender + week + week_cube + week:treatment + week_cube:treatment,
+                       data = aids,
+                       random = ~ week + week_cube | id, 
+                       method = "ML",
+                       control = lmeControl(opt = "optim"))
+
+#summary(model_no_age)
+```
+
+
+### LME Model without Gender Covariate (including week:treatment interaction)
+- model_no_gender: $log CD4_i = \beta_1 + \beta_2 age_i + \beta_3 week_i + \beta_4 weekcube_i + \beta_5 week_i*treatment2_i + \beta_6 week_i*treatment3_i + \beta_7 week_i*treatment4_i  + \beta_8 weekcube_i*treatment2_i + \beta_9 weekcube_i*treatment3_i + \beta_{10} weekcube_i*treatment4_i + b_{1i} + b_{3i} week_i + b_{4i} weekcube_i$  
+```{r echo = FALSE}
+# without gender
+model_no_gender <- lme(log_cd4 ~ age + week + week_cube + week:treatment + week_cube:treatment,
+                       data = aids,
+                       random = ~ week + week_cube | id, 
+                       method = "ML",
+                       control = lmeControl(opt = "optim"))
+
+#summary(model_no_gender)
+```
+
+### LME without Week Covariate (including week:treatment interaction)
+- model_no_week: $log CD4_i = \beta_1 + \beta_2 gender_i + \beta_3 week_i*treatment2_i + \beta_4 week_i*treatment3_i + \beta_5 week_i*treatment4_i  + \beta_6 weekcube_i*treatment2_i + \beta_7 weekcube_i*treatment3_i + \beta_8 weekcube_i*treatment4_i + b_{1i}$  
+
+```{r echo = FALSE}
+# without week
+model_no_week <- lme(log_cd4 ~ age + gender + week_cube + week:treatment + week_cube:treatment,
+                       data = aids,
+                       random = ~ week_cube | id, 
+                       method = "ML",
+                       control = lmeControl(opt = "optim"))
+
+#summary(model_no_week)
+```
+
+### Testing Significance of Individual Covariates
+
+#### Testing Significance of Age Covariate
+```{r echo = FALSE}
+anova(model_no_age, model_inter)
+```
+- __H_0: Reduced model with no age covariate.__
+- __H_1: Full model with week:treatment interaction term.__
+- We compared a reduced model with no age covariate and the full model. With a p-value of 0.0008, we conclude that the full model is better than the reduced model and the age covariate is significant. 
+
+#### Testing Significance of Gender Covariate
+```{r echo = FALSE}
+anova(model_no_gender, model_inter)
+```
+- __H_0: Reduced model with no gender covariate.__
+- __H_1: Full model with week:treatment interaction term.__
+- We compared a reduced model with no gender covariate and the full model. With a p-value of 0.2703, we conclude that the reduced model is good enough and the gender covariate is not significant. 
+
+
+#### Testing Significance of Week Covariate
+```{r echo = FALSE}
+anova(model_no_week, model_inter)
+```
+- __H_0: Reduced model with no week covariate.__
+- __H_1: Full model with week:treatment interaction term.__
+- We compared a reduced model with no week covariate and the full model. With a p-value < 0.0001, we conclude that the full model is better than the reduced model and the week covariate is significant. 
+
+### Linear Model  
+- According the results of the anova tests above, the week:treatment interaction covariate, age covariate, and week covariate are significant and the gender covariate is insignificant. Thus, for our linear model, we decided that the `model_no_gender` was the best fit, which also includes a random intercept and random slope for the week covariate.  
+
+- model_no_gender: $log CD4_i = \beta_1 + \beta_2 age_i + \beta_3 week_i + \beta_4 weekcube_i + \beta_5 week_i*treatment2_i + \beta_6 week_i*treatment3_i + \beta_7 week_i*treatment4_i  + \beta_8 weekcube_i*treatment2_i + \beta_9 weekcube_i*treatment3_i + \beta_{10} weekcube_i*treatment4_i + b_{1i} + b_{3i} week_i + b_{4i} weekcube_i$  
+
+### Linear Spline Model
+- model_spline: $log CD4_i = \beta_1 + \beta_2 age_i + \beta_3 week_i + \beta_4 knot term_i + \beta_5 week_i * treatment2_i + \beta_6 week_i * treatment3_i + \beta_7 week_i * treatment4_i + + \beta_8 knot term_i * treatment2_i + \beta_9 knot term_i * treatment3_i + \beta_{10} knot term_i * treatment4_i + b_{1i} + b_{3i} week_i + b_{4i} knot term$.  
+
+  - if week > 16 then knot_term = week, else knot_term = 0.    
+  - if gender = male then gender = 1, else gender = 0 (female).    
+  
+```{r echo = FALSE}
+# Knot Term
+aids <- aids %>% 
+  mutate(knot_term = if_else(week > 16, week, 0)) %>% 
+  relocate(knot_term, .after = week)
+
+model_spline <- lme(log_cd4 ~ age + gender + week + knot_term + week:treatment + knot_term:treatment,
+                     data = aids,
+                     random = ~ week + knot_term | id, 
+                     method = "ML",
+                    control = lmeControl(opt = "optim"))
+
+# summary(model_spline)
+
+# Comparing linear model and linear spline model
+anova(model_no_gender, model_spline)
+```
+
+- __H_0: Reduced model (linear model) is adequate.__  
+- __H_1: Reduced model (linear model) is inadequate; we need the full model (linear spline model).__  
+- From the plots in the Exploratory Data Analysis, patterns of change in log CD4 cell count over time somewhat resemble 2 separate linear trends across all treatment groups. We decided to add a knot term at week 16. We then fit a linear spline model and conducted an anova test comparing the reduced model (linear model) to the full model (linear spline model). With a p-value < 0.0001, we conclude that the full model is better than the reduced model. That is, the linear spline model is a better fit than the linear model. 
+
+### Quadratic Model
+
+- model_quadratic: $log CD4_i = \beta_1 + \beta_2 age_i + \beta_3 week_i + \beta_4 weeksq_i + \beta_5 week_i * treatment2_i + \beta_6 week_i * treatment3_i + \beta_7 week_i * treatment4_i + + \beta_8 weeksq_i * treatment2_i + \beta_9 weeksq_i * treatment3_i + \beta_{10} weeksq_i * treatment4_i + b_{1i} + b_{3i} week_i + b_{4i} weeksq_i$.  
+
+```{r echo = FALSE}
+aids <- aids %>% 
+  mutate(week_sq = (week)^2) %>% 
+  relocate(week_sq, .after = week)
+
+model_quadratic <- lme(log_cd4 ~ age + gender + week + week_sq + week:treatment + week_sq:treatment,
+                       data = aids,
+                       random = ~ week + week_sq | id, 
+                       method = "ML",
+                       control = lmeControl(opt = "optim"))
+
+# summary(model_quadratic)
+
+# Comparing linear spline model and quadratic model
+anova(model_spline, model_quadratic)
+```
+
+
+```{r echo = FALSE}
+aids <- aids %>% 
+  mutate(week_sq = (week)^2) %>% 
+  relocate(week_sq, .after = week)
+
+model_quadratic <- lme(log_cd4 ~ age + gender + week + week_sq + week:treatment + week_sq:treatment,
+                       data = aids,
+                       random = ~ week + week_sq | id, 
+                       method = "ML",
+                       control = lmeControl(opt = "optim"))
+
+# summary(model_quadratic)
+
+# Comparing linear spline model and quadratic model
+anova(model_spline, model_quadratic)
+```
+
+Although the piecewise linear and quadratic trends models are not nested, they both have the same number of parameters and therefore their log-likelihoods can be directly compared. From a comparison of the log-likelihoods $(\hat{l}_{modelquadratic} >  \hat{l}_{modelspline})$, it is evident that the qudratic model fits these data better than the linear spline model.
+
+\newpage
+
+
+```{r echo = FALSE}
+options(scipen=10)
+
+aids <- read_csv("aids.csv")
+
+aids <- aids %>% 
+  mutate(treatment = as.factor(treatment))
+
+# Knot Term
+aids <- aids %>% 
+  mutate(knot_term = if_else(week > 16, week, 0)) %>% 
+  relocate(knot_term, .after = week)
+
+model_spline <- lme(log_cd4 ~ age + week + week:treatment + knot_term,
+                     data = aids,
+                     random = ~ week + knot_term | id, 
+                     method = "REML",
+                    control = lmeControl(opt = "optim"))
+```
+
+## Residual Analysis
+```{r echo = FALSE}
+# Untransformed residuals
+# r_i = Y_i - X_i beta_hat (marginal (population) residual)
+res_population <- residuals(model_spline, type = "response", level = 0)
+
+# transformed residuals
+Sigma_i <- extract.lme.cov(model_spline, aids)
+
+# block matrix of lower triangular Cholesky factors
+L_i <- t(chol(Sigma_i)) 
+
+# transformed residuals
+res_transformed <- solve(L_i) %*% res_population
+```
+
+### Histogram of untransformed residuals
+```{r echo = FALSE}
+tibble(r = res_population) %>% 
+  ggplot(aes(x = r)) +
+  geom_histogram(aes(y = stat(density)), bins = 14, color = "white", fill = "darkolivegreen") +
+  labs(x = "Residuals", y = "Density")
+```
+
+
+### Histogram of transformed residuals
+```{r echo = FALSE}
+
+
+tibble(r_star = res_transformed) %>% 
+  ggplot(aes(x = r_star)) +
+  geom_histogram(aes(y = stat(density)), bins = 14, color = "white", fill = "darkolivegreen") +
+  geom_function(fun = dnorm, color = "blue") +
+  labs(x = "Residuals", y = "Density")
+```
+
+The above figures present the histograms of the transformed and untransformed residuals, and they do not indicate any noticeable skewness.
+
+
+```{r echo = FALSE}
+
+mahalanobis_data <- tibble(id = aids$id, r_star = res_transformed) %>% 
+  group_by(id) %>% 
+  nest() # give each id a vector of residuals
+
+mahalanobis_data <- mahalanobis_data %>% 
+  mutate(df = map_dbl(data, ~nrow(.x))) # maps a function to each element of a list
+
+
+mahalanobis_distance <- function(x){
+  x <- as.matrix(x)
+  t(x) %*% x # gives mahalanobis distance = (r_i*)' %*% (r_i*)
+}
+
+mahalanobis_data <- mahalanobis_data %>% 
+  mutate(d = map_dbl(data, ~mahalanobis_distance(.x)))
+
+mahalanobis_data <- mahalanobis_data %>% 
+  mutate(p_value = pchisq(d, df, lower.tail = FALSE))
+
+mahalanobis_data %>% 
+  arrange(p_value)
+```
+
+Calculating the associated p-values, there were 137 individuals whose $d_i$ yielded p-values less than 0.05. Given that the sample is comprised of 1313 individuals, we would expect to see only about (1313 * 0.05) = 65.65 individuals with extreme values that happen by random chance. This suggests that the distances of these magnitudes are not expected due to chance alone. 
+
+
+## QQ Plot
+
+### QQ plot for untransformed residual (untransformed is not specified)
+
+```{r echo = FALSE}
+
+
+tibble(r = res_population) %>% 
+  ggplot(aes(sample = r)) +
+  geom_qq_line(color = "blue") +
+  geom_qq(shape = 1) +
+  labs(x = "Quantiles of Standard Normal", y = "Quantiles of Residuals")
+```
+
+### QQ plot for transformed residual (transformed is specified)
+
+```{r}
+tibble(r_star = res_transformed) %>% 
+  ggplot(aes(sample = r_star)) +
+  geom_qq_line(color = "blue") + # plots the straight 45 degree line
+  geom_qq(shape = 1) + # plots the actual points
+  labs(x = "Quantiles of Standard Normal", y = "Quantiles of Transformed Residuals")
+```
+
+The following Q-Q plot of the residuals do display some systematic departures from a straight line around the lower tail. 
+
+## Scatter Plots (Predicted Values) 
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+## Make sure points are randomly scattered around the horizontal line y = 0
+
+mu_hat <- fitted(model_spline, level = 0) #  mu_hat =  X_i * beta_hat (predicted values)
+mu_hat_transformed <- solve(L_i) %*% mu_hat # (L_i)^(-1) %*%  mu_hatx
+```
+
+### Transformed residuals 
+
+```{r echo = FALSE, message = FALSE, warning = FALSE}
+
+tibble(x = mu_hat_transformed, y = res_transformed) %>% 
+  ggplot(aes(x = x, y = y)) +
+  geom_hline(yintercept = 0, linetype = "dashed") + # creates a horizontal line at y = 0
+  geom_point(shape = 1) +
+  geom_smooth(method = "loess", se = FALSE) +
+  labs(x = "Transformed Predicted Value", y = "Transformed Residual")
+```
+
+
+\newpage
+
+# GEE & GLME
+
+```{r message = FALSE, echo = FALSE}
+
+options(scipen=10)
+
+aids <- read_csv("aids.csv")
+
+aids <- aids %>% 
+  mutate(treatment = as.factor(treatment),
+         week_sq = (week)^2,
+         cd4_count = round(exp(log_cd4) - 1)) %>% 
+  relocate(week_sq, .after = week)
+
+model_quadratic <- lme(log_cd4 ~ age + gender + week + week_sq + week:treatment + week_sq:treatment,
+                       data = aids,
+                       random = ~ week + week_sq | id, 
+                       method = "ML",
+                       control = lmeControl(opt = "optim"))
+
+
+model_marginal <- geeglm(cd4_count ~ age + gender + week + week_sq + week:treatment + week_sq:treatment,
+                  family = poisson(link = "log"),
+                  data = aids,
+                  id = id,
+                  waves = week,
+                  corstr = "exchangeable", # compound symmetry
+                  std.err = "san.se") # sandwich estimator
+
+# model_glme <- glmer(cd4_count ~ age + gender + week + week_sq + week:treatment + week_sq:treatment + (1 + # week + week_sq | id),
+#                data = aids, # data is aids
+#                family = poisson, # modeling RATE so we must include OFFSET TERM LATER
+#                na.action = na.omit, # remove missing values
+#                offset = log(week), # OFFSET TERM HERE IF MODELING RATE
+#                nAGQ = 0) 
+
+```
+
+When using the cd4 count and attempting to fit the glmer() model, our ideal model was not converging. We believe that working with the transformed log_cd4 and lme() model is a better option.
+
+# Conclusion
+
+Through our analysis of the different models and variables we found that the quadratic model fit the data the best compared to a linear model. However, while this model did contain more outliers than when we expected when we were analyzing, we decided it was the best fit for log_CD4. When testing for different linear models we concluded that gender was not a significant variable in the data. But when we tested for the quadratic model, we found that a full model containing all of the variables was needed. Lastly, when attempting to fit the model using glmer() the quadratic model was not converging, therefore we decided to keep the response variable to be log_CD4 instead of CD4 counts.
